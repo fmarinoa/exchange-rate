@@ -19,6 +19,8 @@ jobs:
       - name: Check out repository
         # actions/checkout v7.0.1
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
 
       - name: Run exchange-rate check
         run: ./check.sh
@@ -26,7 +28,7 @@ jobs:
       - name: Fetch and append today's SUNAT rate
         env:
           XR_CSV: ${{ github.workspace }}/history.csv
-        run: ./xr 100
+        run: ./xr 100 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Commit and push CSV update
         run: |
