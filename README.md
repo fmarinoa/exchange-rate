@@ -97,7 +97,7 @@ exchange-rate/
 ├── README.md
 ├── xr            # script POSIX sh ejecutable
 ├── check.sh      # check del cálculo y del CSV, sin red
-└── history.csv   # generado, no versionar
+└── history.csv   # histórico versionado y actualizado por GitHub Actions
 ```
 
 ## Check
@@ -113,7 +113,12 @@ exchange-rate/
 ./check.sh   # imprime "ok" o "FAIL: <caso>"
 ```
 
+## GitHub Action
+
+El workflow `.github/workflows/update-exchange-rate.yml` consulta SUNAT una vez al día a las 05:00 UTC, ejecuta el check sin red y agrega la tasa al CSV solo si la fecha aún no existe. También puede ejecutarse manualmente desde la pestaña **Actions**.
+
+Si no hay cambios, el workflow termina sin crear un commit vacío. `actions/checkout` está fijado a la versión exacta `v7.0.1` por SHA y el runner usa `ubuntu-slim`, una opción más ligera con una CPU para tareas cortas como esta.
+
 ## Fuera de alcance
 
-- **Scheduler (cron/launchd/systemd timer):** se descartó, el uso es on-demand.
 - **Otras monedas / tasas de casas de cambio:** solo USD SUNAT. El nombre `exchange-rate` deja espacio para esto si llega a hacer falta.
