@@ -1,0 +1,30 @@
+#!/bin/sh
+# Tipo de cambio SUNAT + simulación USD <-> PEN. Ver README.md.
+set -eu
+export LC_ALL=C # punto decimal en awk sin importar el locale
+
+amount=${1:-100}
+url=${XR_URL:-https://www.sunat.gob.pe/a/txt/tipoCambio.txt}
+csv=${XR_CSV:-$(dirname "$0")/history.csv}
+
+awk -v a="$amount" 'BEGIN { exit !(a ~ /^[0-9]+(\.[0-9]+)?$/ && a > 0) }' ||
+  { echo "xr: monto inválido: $amount" >&2; exit 2; }
+
+raw=$(curl -fsS --max-time 10 "$url") || exit 1
+raw=$(printf %s "$raw" | tr -d '\r\n')
+printf '%s\n' "$raw" | grep -Eq '^[0-9]{2}/[0-9]{2}/[0-9]{4}\|[0-9]+\.[0-9]+\|[0-9]+\.[0-9]+\|$' ||
+  { echo "xr: respuesta inesperada de $url: $raw" >&2; exit 1; }
+
+IFS='|' read -r date buy sell _ <<EOF
+$raw
+EOF
+
+echo "SUNAT $date  buy $buy  sell $sell"
+# ponytail: float de awk, ok para simular; pasar a centavos enteros si se usa para dinero real
+awk -v a="$amount" -v b="$buy" -v s="$sell" 'BEGIN {
+  printf "%.2f USD -> %.2f PEN\n", a, a * b
+  printf "%.2f PEN -> %.2f USD\n", a, a / s
+}'
+
+[ -f "$csv" ] || echo 'sunat_date,buy,sell' > "$csv"
+grep -q "^$date," "$csv" || echo "$date,$buy,$sell" >> "$csv"
