@@ -2,7 +2,7 @@ name: Update exchange rate
 
 on:
   schedule:
-    - cron: "0 5 * * *"
+    - cron: "0 16 * * 1-5" # 11:00 Lima, lunes a viernes
   workflow_dispatch:
 
 permissions:
@@ -28,9 +28,12 @@ jobs:
       - name: Fetch and append today's SUNAT rate
         env:
           XR_CSV: ${{ github.workspace }}/history.csv
-        run: ./xr 100 | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          ./xr 100 > "$RUNNER_TEMP/xr.txt"
+          tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/xr.txt"
 
       - name: Commit and push CSV update
+        id: commit
         run: |
           git diff --quiet -- history.csv && exit 0
 
@@ -40,3 +43,19 @@ jobs:
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "chore: update exchange rate"
           git push
+          echo changed=true >> "$GITHUB_OUTPUT"
+
+      - name: Send WhatsApp alert
+        # solo con fila nueva: re-ejecutar el mismo día no repite el mensaje
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+        # CallMeBot responde 2xx aun con error: el éxito se valida por texto. No se loguea la respuesta (trae el teléfono).
+        run: |
+          grep -q '^ALERTA' "$RUNNER_TEMP/xr.txt" || exit 0
+          curl -sS --max-time 30 -G https://api.callmebot.com/whatsapp.php \
+            --data-urlencode "phone=$CALLMEBOT_PHONE" \
+            --data-urlencode "apikey=$CALLMEBOT_APIKEY" \
+            --data-urlencode "text@$RUNNER_TEMP/xr.txt" |
+            grep -q 'Message queued' || { echo "CallMeBot no encoló el mensaje" >&2; exit 1; }

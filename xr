@@ -6,6 +6,7 @@ export LC_ALL=C # punto decimal en awk sin importar el locale
 amount=${1:-100}
 url=${XR_URL:-https://www.sunat.gob.pe/a/txt/tipoCambio.txt}
 csv=${XR_CSV:-$(dirname "$0")/history.csv}
+days=20 # ventana de la alerta, en filas del CSV (~días hábiles)
 
 awk -v a="$amount" 'BEGIN { exit !(a ~ /^[0-9]+(\.[0-9]+)?$/ && a > 0) }' ||
   { echo "xr: monto inválido: $amount" >&2; exit 2; }
@@ -27,4 +28,8 @@ awk -v a="$amount" -v b="$buy" -v s="$sell" 'BEGIN {
 }'
 
 [ -f "$csv" ] || echo 'sunat_date,buy,sell' > "$csv"
+# alerta: sell actual < mínimo de las últimas $days filas de otras fechas (estricto: los repetidos no alertan)
+awk -F, -v d="$date" -v s="$sell" -v w="$days" 'NR > 1 && $1 != d { v[++n] = $3 + 0 }
+  END { if (n < w) exit; m = v[n]; for (i = n - w + 1; i < n; i++) if (v[i] < m) m = v[i]
+        if (s + 0 < m) printf "ALERTA: venta %.3f < mín %d días %.3f\n", s, w, m }' "$csv"
 grep -q "^$date," "$csv" || echo "$date,$buy,$sell" >> "$csv"

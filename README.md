@@ -20,6 +20,8 @@ GET https://www.sunat.gob.pe/a/txt/tipoCambio.txt
 
 Formato `fecha|compra|venta|`. El endpoint **no está documentado** como API: puede cambiar sin aviso, por eso se valida el formato antes de usarlo.
 
+El valor es el promedio ponderado SBS del **día hábil anterior** (no es tiempo real): sábado, domingo y lunes muestran el cierre del viernes.
+
 ## Regla de simulación
 
 La tasa se elige según **quién compra el dólar**:
@@ -65,6 +67,12 @@ SUNAT 21/11/2026  buy 3.447  sell 3.453
 100.00 PEN -> 28.96 USD
 ```
 
+Si `sell` es menor (estricto) que el mínimo de las últimas 20 filas del CSV con otra fecha, agrega una última línea. Con menos de 20 filas no alerta.
+
+```
+ALERTA: venta 3.399 < mín 20 días 3.404
+```
+
 **CSV** `history.csv` (junto al script): histórico de tasas, una fila por `sunat_date`. Crea el header si no existe; si la fecha ya está, no agrega nada.
 
 ```csv
@@ -74,6 +82,8 @@ sunat_date,buy,sell
 
 La simulación no se guarda: se recalcula con `buy`/`sell` y cualquier monto. `sunat_date` es la fecha que publica SUNAT: en fines de semana o feriados puede ser la del último día hábil.
 
+Las filas 26/10/2026 a 20/11/2026 se cargaron desde la API del BCRP (series `PD04639PD`/`PD04640PD`, SBS compra/venta), asignando el valor SBS del día `d` a la fecha SUNAT del día hábil siguiente.
+
 ## Flujo
 
 1. Valida el monto: numérico y > 0. Si no, `exit 2`.
@@ -81,7 +91,8 @@ La simulación no se guarda: se recalcula con `buy`/`sell` y cualquier monto. `s
 3. Quita `\r` y `\n`, luego valida con `grep -Eq '^[0-9]{2}/[0-9]{2}/[0-9]{4}\|[0-9]+\.[0-9]+\|[0-9]+\.[0-9]+\|$'`.
 4. Si falla el paso 2 o 3: mensaje a stderr, `exit 1`, **no escribe en el CSV** (para no ensuciar el histórico).
 5. awk calcula e imprime en terminal.
-6. Agrega `sunat_date,buy,sell` al CSV solo si `grep -q "^$date,"` no la encuentra.
+6. awk compara `sell` contra el mínimo de las últimas 20 filas con otra fecha e imprime `ALERTA: …` si es menor.
+7. Agrega `sunat_date,buy,sell` al CSV solo si `grep -q "^$date,"` no la encuentra.
 
 ## Configuración (env, opcional)
 
@@ -106,6 +117,7 @@ exchange-rate/
 
 - stdout contiene `344.70 PEN` y `28.96 USD`
 - dos corridas con la misma fecha dejan el CSV con header + 1 fila
+- alerta solo con 20 filas previas y `sell` menor al mínimo; sin alerta si hay menos filas o el mínimo es menor
 - un fixture con formato inválido termina con `exit 1` y no escribe en el CSV
 - montos inválidos (`abc`, `0`) terminan con `exit 2`
 
@@ -115,7 +127,9 @@ exchange-rate/
 
 ## GitHub Action
 
-El workflow `.github/workflows/update-exchange-rate.yml` consulta SUNAT una vez al día a las 05:00 UTC, ejecuta el check sin red y agrega la tasa al CSV solo si la fecha aún no existe. También puede ejecutarse manualmente desde la pestaña **Actions**.
+El workflow `.github/workflows/update-exchange-rate.yml` consulta SUNAT de lunes a viernes a las 16:00 UTC (11:00 Lima), ejecuta el check sin red y agrega la tasa al CSV solo si la fecha aún no existe. También puede ejecutarse manualmente desde la pestaña **Actions**.
+
+Si el commit agregó una fila y la salida de `xr` tiene `ALERTA`, envía esa salida completa por WhatsApp con [CallMeBot](https://www.callmebot.com/). Requiere los secrets `CALLMEBOT_PHONE` y `CALLMEBOT_APIKEY`. CallMeBot responde 2xx aun con apikey inválida, así que el éxito se valida buscando `Message queued` en la respuesta; si no aparece, el job falla. La respuesta no se imprime porque incluye el teléfono y el repo es público.
 
 Si no hay cambios, el workflow termina sin crear un commit vacío. `actions/checkout` está fijado a la versión exacta `v7.0.1` por SHA y el runner usa `ubuntu-slim`, una opción más ligera con una CPU para tareas cortas como esta.
 

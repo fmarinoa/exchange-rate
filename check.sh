@@ -13,6 +13,18 @@ ok() { XR_URL="file://$tmp/ok.txt" XR_CSV="$tmp/history.csv" ./xr "$@"; }
 out=$(ok 100)
 echo "$out" | grep -q '^100.00 USD -> 344.70 PEN$' || fail "USD -> PEN"
 echo "$out" | grep -q '^100.00 PEN -> 28.96 USD$' || fail "PEN -> USD"
+if echo "$out" | grep -q ALERTA; then fail "sin alerta con menos de 20 filas"; fi
+
+# 20 filas con sell 3.500, la última con sell $1
+win() {
+  awk -v low="$1" 'BEGIN { print "sunat_date,buy,sell"
+    for (i = 1; i <= 20; i++) printf "%02d/10/2026,3.490,%s\n", i, (i == 20 ? low : "3.500") }' > "$tmp/w.csv"
+  XR_URL="file://$tmp/ok.txt" XR_CSV="$tmp/w.csv" ./xr
+}
+out=$(win 3.500)
+echo "$out" | grep -q '^ALERTA: venta 3.453 < mín 20 días 3.500$' || fail "alerta si venta < mín 20 días"
+out=$(win 3.400)
+if echo "$out" | grep -q ALERTA; then fail "sin alerta si venta >= mín 20 días"; fi
 
 ok 100 > /dev/null
 [ "$(cat "$tmp/history.csv")" = "sunat_date,buy,sell
